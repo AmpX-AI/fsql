@@ -45,15 +45,9 @@ test-suite: ## install new venv, run tests and coverage
 install-edit: clean ## install the package in editable mode
 	pip install -e .[test]
 
-## TODO implement
-release: clean
+build: clean
 	(\
 		set -e ; \
-		git fetch --all --tags ; \
-		export TARGET_VERSION=` PYTHONPATH="." python -c 'import setup; print(setup.compute_version())' `; \
+		if [ "$$GITHUB_REF_TYPE" = "tag" ] ; then export TARGET_VERSION=$$GITHUB_REF_NAME ; fi ; \
 		python -m build; \
-		PCKG=`ls dist/ | grep 'whl$$'`; \
-		NAME=`cat setup.cfg | grep '^name =' | sed 's/.*=[ ]*\(.*\)/\1/'`; \
-		git tag "v$${TARGET_VERSION}"; \
-		git push origin "v$${TARGET_VERSION}"; \
 	)
