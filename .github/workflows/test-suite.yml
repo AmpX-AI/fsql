@@ -20,6 +20,8 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     needs: test-suite
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
      - uses: rymndhng/release-on-push-action@v0.25.0 # https://github.com/marketplace/actions/tag-release-on-push-action
        with:
