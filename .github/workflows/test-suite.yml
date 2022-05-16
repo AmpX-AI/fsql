@@ -11,8 +11,17 @@ jobs:
        with:
          python-version: 3.8.8
      - run: make static-analysis test-suite
-     - uses: actions/upload-artifact@v3
+     # - uses: actions/upload-artifact@v3 # todo -- this would use some easily displayable artifact
+     #   with:
+     #     name: code-coverage-report
+     #     path: htmlcov
+     #     retention-days: 7
+  release:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: test-suite
+    runs-on: ubuntu-latest
+    steps:
+     - uses: rymndhng/release-on-push-action@v0.25.0 # https://github.com/marketplace/actions/tag-release-on-push-action
        with:
-         name: code-coverage-report
-         path: htmlcov
-         retention-days: 7
+         bump_version_scheme: minor
+
