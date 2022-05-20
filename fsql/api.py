@@ -116,8 +116,8 @@ def write_object(
     * for Data Frames converts to the specified format (only parquet+fastparquet for now), and then it is written
       using the file-like object from fsspec and dataframe's native write.
 
-    At the moment, only parquet as a format is supported. The only format options are 'engine' with values
-    'fastparquet' and 'pyarrow'.
+    At the moment, only parquet and csv as a format are supported. The only format options are 'engine' with values
+    'fastparquet' and 'pyarrow' (these refer only to parquet format).
 
     For larger data frames or table-like semantics, use rather endpoint (TODO).
 
@@ -139,6 +139,9 @@ def write_object(
                     data.to_parquet(fd, engine=engine)
             else:
                 raise ValueError(f"unsupported engine for dataframe writing: {engine}")
+        elif format == "csv":
+            with fs.open(url_suff, "wb") as fd:
+                data.to_csv(fd)
         else:
             raise ValueError(f"unsupported format for dataframe writing: {format}")
     elif isinstance(data, io.StringIO) or isinstance(data, io.BytesIO):
