@@ -48,10 +48,16 @@ class InputFormat(Enum):
     PARQUET = auto()
     JSON = auto()
     CSV = auto()
+    XLSX = auto()
 
     @classmethod
     def from_url(cls, url: str):
-        return {"json": InputFormat.JSON, "parquet": InputFormat.PARQUET, "csv": InputFormat.CSV}[url]
+        return {
+            "json": InputFormat.JSON,
+            "parquet": InputFormat.PARQUET,
+            "csv": InputFormat.CSV,
+            "xlsx": InputFormat.XLSX,
+        }[url]
 
 
 class DataReader(ABC):
@@ -91,6 +97,8 @@ class PandasReader(DataReader):
             reader = lambda fd: pd.read_json(fd, lines=True)  # noqa: E731
         elif input_format is InputFormat.CSV:
             reader = pd.read_csv
+        elif input_format is InputFormat.XLSX:
+            reader = lambda fd: pd.read_excel(fd, engine="openpyxl")  # noqa: E731
         elif input_format is InputFormat.AUTO:
             raise ValueError(f"partition had format detected as auto -> invalid state. Partition: {partition}")
         else:

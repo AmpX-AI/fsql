@@ -1,4 +1,3 @@
-import csv
 import io
 
 import pandas as pd
@@ -21,6 +20,18 @@ def test_write_buffer_s3(helper):
     assert set(output.key.to_list()) == {1}
 
 
+def test_write_csv_s3(helper):
+    """Writes a dataframe as csv, tests that read works."""
+    bucket = "test-bouquet"
+    fs = helper.s3fs
+    fs.mkdir(bucket)
+
+    input = pd.DataFrame({"key": [1]})
+    write_object("s3://test-bouquet/my_df.csv", input, format="csv")
+    output = read_partitioned_table("s3://test-bouquet/", Q_TRUE)
+    assert set(output.key.to_list()) == {1}
+
+
 def test_write_buffer_local_bytes(tmpdir):
     """Writes a dataframe as parquet, tests that read works."""
     path_base = tmpdir.join("my_file.parquet")
@@ -31,15 +42,12 @@ def test_write_buffer_local_bytes(tmpdir):
     assert set(output.key.to_list()) == {1}
 
 
-def test_write_buffer_local_string(tmpdir):
+def test_write_csv_local(tmpdir):
     """Writes a csv file, tests that read works."""
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["k1", "k2"])
-    writer.writerow([1, 2])
+    input = pd.DataFrame({"k1": [1], "k2": [2]})
     path_base = tmpdir.join("my_file.csv")
     url = f"file://{path_base}"
-    write_object(url, buffer)
+    write_object(url, input, format="csv")
     output = pd.read_csv(path_base)  # for some reason, pd.read_parquet was not happy with file://
     assert set(output.k1.to_list()) == {1}
     assert set(output.k2.to_list()) == {2}
