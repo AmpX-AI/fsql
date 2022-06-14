@@ -41,14 +41,14 @@ import io
 import logging
 import shutil
 import warnings
-from typing import Optional, Union
+from typing import Iterable, Optional, Tuple, Union
 
 import pandas as pd
 from fsspec.spec import AbstractFileSystem
 
 from fsql import get_url_and_fs
 from fsql.column_parser import AUTO_PARSER, ColumnParser
-from fsql.deser import PANDAS_READER, DataReader
+from fsql.deser import PANDAS_READER, DataObject, DataReader, PartitionReadFailure
 from fsql.partition import Partition
 from fsql.partition_discovery import discover_partitions
 from fsql.query import Query
@@ -71,9 +71,9 @@ def read_partitioned_table(
     url: str,
     query: Query,
     column_parser: ColumnParser = AUTO_PARSER,
-    data_reader: DataReader = PANDAS_READER,
+    data_reader: DataReader[DataObject] = PANDAS_READER,
     fs: Optional[AbstractFileSystem] = None,
-):
+) -> Union[DataObject, Tuple[DataObject, Iterable[PartitionReadFailure]]]:
     """Reads a table rooted at `url`, with partition columns described in `column_parser` and filtered via `query`.
 
     The default values assume `colName1=val/colName2=val` format of the path, and pandas data frame as output format.
@@ -84,6 +84,11 @@ def read_partitioned_table(
 
     If `fs` is not provided, a default one is constructed from the url. The instance is then used for all `ls`
     and `open` operations.
+
+    Return type is driven by the `data_reader` -- default behaviour is to return a pandas DataFrame. All provided
+    data readers raise exception whenever any Partition cannot be read, and support `lazy_errors` option which changes
+    the behaviour to collect all exceptions instead and return them together with an object consisting of all that was
+    readable.
     """
     url_suff, fs_default = get_url_and_fs(url)
     fs = fs if fs else fs_default
@@ -108,7 +113,7 @@ def write_object(
     format: Optional[str] = None,
     format_options: Optional[dict[str, str]] = None,
     fs: Optional[AbstractFileSystem] = None,
-):
+) -> None:
     """Minimalistic function to write an object to a designated location.
 
     * Does not support any table-like semantics -- partition appends or multi-partition inserts,

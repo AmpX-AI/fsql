@@ -17,6 +17,9 @@ this approach is undesirable due to too-large intermediate representation -- in 
 opt for the lazy approach (such as in Dask), and don't materialize inside neither the `read_single` nor
 `concat` methods.
 
+For custom data readers, mind observing the `lazy_errors` variable -- if it is set, the method `read_single`
+should not raise upon Partition-specific problems, but accumulate the error instead.
+
 Existing readers such as PandasReader allow customisation via passing through any kwargs to the underlying
 pandas read method.
 
@@ -27,13 +30,13 @@ from __future__ import annotations
 
 import json
 import logging
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections import defaultdict
-from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum, auto, unique
-from functools import partial
-from typing import Any
+from functools import partial, reduce
+from itertools import chain
+from typing import Callable, Generic, Iterable, NamedTuple, Tuple, TypeVar, Union
 
 import pandas as pd
 from fsspec.spec import AbstractFileSystem
@@ -42,6 +45,16 @@ from fsql import assert_exhaustive_enum
 from fsql.partition import Partition
 
 logger = logging.getLogger(__name__)
+
+A = TypeVar("A")
+B = TypeVar("B")
+BiIterator = Tuple[Iterable[A], Iterable[B]]
+
+
+# lambda acc, e: (chain(acc[0], e[0]), chain(acc[1], e[1])) # not sufficient for mypy
+def flatten_biiterator(acc: BiIterator, elem: BiIterator) -> BiIterator:
+    """When used with `reduce`, converts an iterable of tuple(iterable, iterable) to a tuple(iterable, iterable)"""
+    return (chain(acc[0], elem[0]), chain(acc[1], elem[1]))
 
 
 @unique
@@ -64,9 +77,25 @@ class InputFormat(Enum):
         }[url]
 
 
-class DataReader(ABC):
-    def __init__(self, input_format: InputFormat = InputFormat.AUTO):
+DataObject = TypeVar("DataObject")
+
+
+class PartitionReadFailure(NamedTuple):
+    partition: Partition
+    reason: str  # or Any?
+
+
+# NOTE a namedtuple is preferable, but somehow cannot be cast to BiIterator[A, B]...
+# class PartitionReadOutcome(NamedTuple, Generic[DataObject]):
+#     data: Iterable[DataObject]
+#     failures: Iterable[PartitionReadFailure]
+PartitionReadOutcome = Tuple[Iterable[DataObject], Iterable[PartitionReadFailure]]
+
+
+class DataReader(Generic[DataObject]):
+    def __init__(self, input_format: InputFormat = InputFormat.AUTO, lazy_errors=False):
         self.input_format = input_format
+        self.lazy_errors = lazy_errors
 
     def detect_format(self, url: str) -> InputFormat:
         if self.input_format != InputFormat.AUTO:
@@ -75,28 +104,37 @@ class DataReader(ABC):
             return InputFormat.from_url(url.split(".")[-1])
 
     @abstractmethod
-    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> Any:  # TODO generics on the Any
+    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> PartitionReadOutcome:
         raise NotImplementedError("abc")
 
     @abstractmethod
-    def concat(self, data: Iterable[Any]) -> Any:  # TODO generics on the Any
+    def concat(self, outcomes: Iterable[DataObject]) -> DataObject:
         raise NotImplementedError("abc")
 
     def read_and_concat(
         self, partitions: Iterable[Partition], fs: AbstractFileSystem
-    ) -> Any:  # TODO generics on the Any
-        with ThreadPoolExecutor(max_workers=32) as tpe:  # TODO configurable
-            data = tpe.map(partial(self.read_single, fs=fs), partitions)
-        return self.concat(data)
+    ) -> Union[DataObject, Tuple[DataObject, Iterable[PartitionReadFailure]]]:
+        # TODO it is profoundly unfortunate that the return type is Union. Ideally, it would be a generic
+        # type T that is bound with this union, and determined via lazy_error parameter which would be
+        # not a boolean but instead a function [DataObject, T[DataObject]]. Alas, I was not able to pythonize
+        # that. Note this would then apply to the api's signature as well
+        with ThreadPoolExecutor(max_workers=32) as tpe:  # TODO configurable worker count
+            partition_read_outcomes = tpe.map(partial(self.read_single, fs=fs), partitions)
+            if self.lazy_errors:
+                data_objects, failures = reduce(flatten_biiterator, partition_read_outcomes)
+                return (self.concat(data_objects), failures)
+            else:
+                data_objects = chain(*(e[0] for e in partition_read_outcomes))
+                return self.concat(data_objects)
 
 
-class PandasReader(DataReader):
+class PandasReader(DataReader[pd.DataFrame]):
     """Wraps various pandas read methods (parquet, json, csv, excel) into a single interface.
     Behaviour can be customised via passing any kwargs to the constructor.
     """
 
-    def __init__(self, input_format=InputFormat.AUTO, **pdread_kwargs):
-        super().__init__(input_format=input_format)
+    def __init__(self, input_format=InputFormat.AUTO, lazy_errors=False, **pdread_kwargs):
+        super().__init__(input_format=input_format, lazy_errors=lazy_errors)
         self.pdread_user_kwargs = pdread_kwargs
         self.pdread_default_kwargs = defaultdict(dict)
         self.pdread_default_kwargs[InputFormat.PARQUET] = {
@@ -109,65 +147,85 @@ class PandasReader(DataReader):
             "engine": "openpyxl",
         }
 
-    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> pd.DataFrame:
-        logger.debug(f"read dataframe for partition {partition}")
-        input_format = self.detect_format(partition.url)
-        logger.debug(f"format detected for partition {input_format} <- {partition}")
+    def format_to_reader(self, input_format: InputFormat) -> Callable:
         if input_format is InputFormat.PARQUET:
-            reader = pd.read_parquet
+            return pd.read_parquet
         elif input_format is InputFormat.JSON:
-            reader = pd.read_json
+            return pd.read_json
         elif input_format is InputFormat.CSV:
-            reader = pd.read_csv
+            return pd.read_csv
         elif input_format is InputFormat.XLSX:
-            reader = pd.read_excel
+            return pd.read_excel
         elif input_format is InputFormat.AUTO:
-            raise ValueError(f"partition had format detected as auto -> invalid state. Partition: {partition}")
+            raise ValueError("partition had format detected as auto -> invalid state.")
         else:
             assert_exhaustive_enum(input_format)
 
+    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> PartitionReadOutcome:
+        logger.debug(f"read dataframe for partition {partition}")
+        input_format = self.detect_format(partition.url)
+        logger.debug(f"format detected for partition {input_format} <- {partition}")
+        reader = self.format_to_reader(input_format)
+
         pdread_kwargs = {**self.pdread_default_kwargs[input_format], **self.pdread_user_kwargs}
         logger.debug(f"reader kwargs {pdread_kwargs} for partition {partition}")
-        try:
+
+        def read_dataframe(partition: Partition) -> PartitionReadOutcome:
             with fs.open(partition.url, "rb") as fd:
-                df = reader(fd, **pdread_kwargs)
+                try:
+                    df = reader(fd, **pdread_kwargs)
+                    for key, value in partition.columns.items():
+                        df[key] = value
+                    return ([df], [])
+                except ValueError as e:
+                    if not self.lazy_errors:
+                        raise
+                    else:
+                        return ([], [PartitionReadFailure(partition, str(e))])
+
+        try:
+            result = read_dataframe(partition)
         except FileNotFoundError as e:
             logger.warning(f"file {partition} reading exception {type(e)}, attempting cache invalidation and reread")
             fs.invalidate_cache()
-            with fs.open(partition.url, "rb") as fd:
-                df = reader(fd, **pdread_kwargs)
+            result = read_dataframe(partition)
 
-        for key, value in partition.columns.items():
-            df[key] = value
-        return df
+        return result
 
-    def concat(self, data: Iterable[Any]) -> Any:  # TODO generics on the Any
+    def concat(self, data: Iterable[pd.DataFrame]) -> pd.DataFrame:
         return pd.concat(data)
 
 
 PANDAS_READER = PandasReader()
 
 
-class EnumeratedDictReader(DataReader):
-    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> dict:
+class EnumeratedDictReader(DataReader[dict]):
+    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> PartitionReadOutcome:
         logger.debug(f"read single for partition {partition}")
         input_format = self.detect_format(partition.url)
         if input_format != InputFormat.JSON:
             raise ValueError(f"EnumeratedDictReader supports only json, not {input_format}. Partition is {partition}")
 
-        def read_json(url):
-            with fs.open(url, "r") as fd:
-                return json.load(fd)
+        def read_dict(partition: Partition) -> PartitionReadOutcome:
+            with fs.open(partition.url, "r") as fd:
+                try:
+                    base = json.load(fd)
+                    return ([{**base, **partition.columns}], [])
+                except json.decoder.JSONDecodeError as e:
+                    if not self.lazy_errors:
+                        raise
+                    else:
+                        return ([], [PartitionReadFailure(partition, str(e))])
 
         try:
-            base = read_json(partition.url)
+            result = read_dict(partition)
         except FileNotFoundError as e:
             logger.warning(f"file {partition} reading exception {type(e)}, attempting cache invalidation and reread")
             fs.invalidate_cache()
-            base = read_json(partition.url)
-        return {**base, **partition.columns}
+            result = read_dict(partition)
+        return result
 
-    def concat(self, data: Iterable[Any]) -> Any:  # TODO generics on the Any
+    def concat(self, data: Iterable[dict]) -> dict:
         return dict(enumerate(data))
 
 
