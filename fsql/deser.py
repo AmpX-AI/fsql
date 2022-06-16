@@ -26,17 +26,29 @@ pandas read method.
 The user should *not* bake in any specific business logic in here -- a more prefered approach is to
 return an object such as (lazy) data frame as early as possible, and apply any transformations later on.
 """
+
+# design NOTE : there are a few unfortunates in this module:
+# - we are using typing.Tuple instead of tuple for types because of the type alias declarations. Fix with python 3.9
+# - the Generics are not done properly -- see the comments at `DataReader.read_and_concat` and `PartitionReadOutcome`
+# - there is some overlap between `PandasReader.read_single` and `EnumeratedDictReader.read_single`, notably in the
+#   nested function `_read_internal`. It may be a better idea to, instead of `read_single`, implement `read_partition`,
+#   `error_list`, `extend_data_object_with_partition_columns`, and keep the `read_single` skeleton in the DataReader.
+#   Only time will tell.
+# - see the InputFormat -- it can be addressed with the previous comment, separating the Auto from the rest and adding
+#   a more typeclassy flavour
+
 from __future__ import annotations
 
 import json
 import logging
 from abc import abstractmethod
 from collections import defaultdict
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum, auto, unique
 from functools import partial, reduce
 from itertools import chain
-from typing import Callable, Generic, Iterable, NamedTuple, Tuple, TypeVar, Union
+from typing import Generic, Iterable, NamedTuple, Tuple, TypeVar, Union
 
 import pandas as pd
 from fsspec.spec import AbstractFileSystem
@@ -80,6 +92,11 @@ class InputFormat(Enum):
 DataObject = TypeVar("DataObject")
 
 
+class DataObjectRich(NamedTuple, Generic[DataObject]):
+    data: DataObject
+    failures: Iterable[PartitionReadFailure]
+
+
 class PartitionReadFailure(NamedTuple):
     partition: Partition
     reason: str  # or Any?
@@ -94,6 +111,13 @@ PartitionReadOutcome = Tuple[Iterable[DataObject], Iterable[PartitionReadFailure
 
 class DataReader(Generic[DataObject]):
     def __init__(self, input_format: InputFormat = InputFormat.AUTO, lazy_errors=False):
+        """
+        * The `input_format is used to enforce the file format. The default AUTO represents recognition based
+          on suffix (see the `InputFormat.from_url`).
+        * When `lazy_errors` is False, a first error encountered in reading raises immediately; if True, it is
+          instead stored in a list, and returned at the end, along with DataObject representing all partitions
+          which encountered no errors.
+        """
         self.input_format = input_format
         self.lazy_errors = lazy_errors
 
@@ -113,7 +137,7 @@ class DataReader(Generic[DataObject]):
 
     def read_and_concat(
         self, partitions: Iterable[Partition], fs: AbstractFileSystem
-    ) -> Union[DataObject, Tuple[DataObject, Iterable[PartitionReadFailure]]]:
+    ) -> Union[DataObject, DataObjectRich]:
         # TODO it is profoundly unfortunate that the return type is Union. Ideally, it would be a generic
         # type T that is bound with this union, and determined via lazy_error parameter which would be
         # not a boolean but instead a function [DataObject, T[DataObject]]. Alas, I was not able to pythonize
@@ -122,7 +146,9 @@ class DataReader(Generic[DataObject]):
             partition_read_outcomes = tpe.map(partial(self.read_single, fs=fs), partitions)
             if self.lazy_errors:
                 data_objects, failures = reduce(flatten_biiterator, partition_read_outcomes)
-                return (self.concat(data_objects), failures)
+                # no idea why but mypy complains here:
+                # Argument 1 to "DataObjectRich" has incompatible type "DataObject"; expected "DataObject"
+                return DataObjectRich(self.concat(data_objects), failures)  # type: ignore
             else:
                 data_objects = chain(*(e[0] for e in partition_read_outcomes))
                 return self.concat(data_objects)
@@ -134,6 +160,9 @@ class PandasReader(DataReader[pd.DataFrame]):
     """
 
     def __init__(self, input_format=InputFormat.AUTO, lazy_errors=False, **pdread_kwargs):
+        """See DataReader for `lazy_errors` and `input_format`. The `pdread_kwargs` are passed
+        verbatim to the respective `pd.read_` method.
+        """
         super().__init__(input_format=input_format, lazy_errors=lazy_errors)
         self.pdread_user_kwargs = pdread_kwargs
         self.pdread_default_kwargs = defaultdict(dict)
@@ -147,7 +176,8 @@ class PandasReader(DataReader[pd.DataFrame]):
             "engine": "openpyxl",
         }
 
-    def format_to_reader(self, input_format: InputFormat) -> Callable:
+    @classmethod
+    def _format_to_reader(cls, input_format: InputFormat) -> Callable:
         if input_format is InputFormat.PARQUET:
             return pd.read_parquet
         elif input_format is InputFormat.JSON:
@@ -165,30 +195,30 @@ class PandasReader(DataReader[pd.DataFrame]):
         logger.debug(f"read dataframe for partition {partition}")
         input_format = self.detect_format(partition.url)
         logger.debug(f"format detected for partition {input_format} <- {partition}")
-        reader = self.format_to_reader(input_format)
+        reader = self._format_to_reader(input_format)
 
         pdread_kwargs = {**self.pdread_default_kwargs[input_format], **self.pdread_user_kwargs}
         logger.debug(f"reader kwargs {pdread_kwargs} for partition {partition}")
 
-        def read_dataframe(partition: Partition) -> PartitionReadOutcome:
+        def _read_internal(partition: Partition) -> PartitionReadOutcome:
             with fs.open(partition.url, "rb") as fd:
                 try:
                     df = reader(fd, **pdread_kwargs)
                     for key, value in partition.columns.items():
                         df[key] = value
-                    return ([df], [])
+                    return [df], []
                 except ValueError as e:
                     if not self.lazy_errors:
                         raise
                     else:
-                        return ([], [PartitionReadFailure(partition, str(e))])
+                        return [], [PartitionReadFailure(partition, str(e))]
 
         try:
-            result = read_dataframe(partition)
+            result = _read_internal(partition)
         except FileNotFoundError as e:
             logger.warning(f"file {partition} reading exception {type(e)}, attempting cache invalidation and reread")
             fs.invalidate_cache()
-            result = read_dataframe(partition)
+            result = _read_internal(partition)
 
         return result
 
@@ -206,23 +236,23 @@ class EnumeratedDictReader(DataReader[dict]):
         if input_format != InputFormat.JSON:
             raise ValueError(f"EnumeratedDictReader supports only json, not {input_format}. Partition is {partition}")
 
-        def read_dict(partition: Partition) -> PartitionReadOutcome:
+        def _read_internal(partition: Partition) -> PartitionReadOutcome:
             with fs.open(partition.url, "r") as fd:
                 try:
                     base = json.load(fd)
-                    return ([{**base, **partition.columns}], [])
+                    return [{**base, **partition.columns}], []
                 except json.decoder.JSONDecodeError as e:
                     if not self.lazy_errors:
                         raise
                     else:
-                        return ([], [PartitionReadFailure(partition, str(e))])
+                        return [], [PartitionReadFailure(partition, str(e))]
 
         try:
-            result = read_dict(partition)
+            result = _read_internal(partition)
         except FileNotFoundError as e:
             logger.warning(f"file {partition} reading exception {type(e)}, attempting cache invalidation and reread")
             fs.invalidate_cache()
-            result = read_dict(partition)
+            result = _read_internal(partition)
         return result
 
     def concat(self, data: Iterable[dict]) -> dict:

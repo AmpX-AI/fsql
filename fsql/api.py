@@ -41,14 +41,14 @@ import io
 import logging
 import shutil
 import warnings
-from typing import Iterable, Optional, Tuple, Union
+from typing import Optional, Union
 
 import pandas as pd
 from fsspec.spec import AbstractFileSystem
 
 from fsql import get_url_and_fs
 from fsql.column_parser import AUTO_PARSER, ColumnParser
-from fsql.deser import PANDAS_READER, DataObject, DataReader, PartitionReadFailure
+from fsql.deser import PANDAS_READER, DataObject, DataObjectRich, DataReader
 from fsql.partition import Partition
 from fsql.partition_discovery import discover_partitions
 from fsql.query import Query
@@ -71,9 +71,9 @@ def read_partitioned_table(
     url: str,
     query: Query,
     column_parser: ColumnParser = AUTO_PARSER,
-    data_reader: DataReader[DataObject] = PANDAS_READER,
+    data_reader: DataReader[DataObject] = PANDAS_READER,  # type: ignore
     fs: Optional[AbstractFileSystem] = None,
-) -> Union[DataObject, Tuple[DataObject, Iterable[PartitionReadFailure]]]:
+) -> Union[DataObject, DataObjectRich]:
     """Reads a table rooted at `url`, with partition columns described in `column_parser` and filtered via `query`.
 
     The default values assume `colName1=val/colName2=val` format of the path, and pandas data frame as output format.
