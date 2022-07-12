@@ -1,5 +1,8 @@
 name: test-suite
-on: [push]
+on:
+  pull_request:
+    types:
+      - opened
 jobs:
   test-suite:
     runs-on: ubuntu-latest
@@ -16,13 +19,3 @@ jobs:
      #     name: code-coverage-report
      #     path: htmlcov
      #     retention-days: 7
-  release:
-    if: ${{ github.ref == 'refs/heads/main' }}
-    needs: test-suite
-    runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-     - uses: rymndhng/release-on-push-action@v0.25.0 # https://github.com/marketplace/actions/tag-release-on-push-action
-       with:
-         bump_version_scheme: minor
