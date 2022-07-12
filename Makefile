@@ -48,6 +48,10 @@ install-edit: clean ## install the package in editable mode
 build: clean
 	(\
 		set -e ; \
+		python -m venv .venv-build; \
+		. .venv-build/bin/activate; \
+		pip install -U pip; \
+		pip install -U build; \
 		if [ "$$GITHUB_REF_TYPE" = "tag" ] ; then export TARGET_VERSION=$$GITHUB_REF_NAME ; \
 		else export TARGET_VERSION=$$(git tag -l "v*" | sort -V -r | head -n 1) ; fi ; \
 		python -m build; \
