@@ -26,4 +26,20 @@ jobs:
      - uses: rymndhng/release-on-push-action@v0.25.0 # https://github.com/marketplace/actions/tag-release-on-push-action
        with:
          bump_version_scheme: minor
-
+  publish:
+    tags: 'v*'
+    runs-on: ubuntu-latest
+    steps:
+     - uses: actions/checkout@v3
+     - uses: actions/setup-python@v2
+       with:
+         python-version: 3.8.8
+     - run: make build
+     - uses: actions/upload-archive@v2
+       with:
+         name: package-distribution
+         path: dist
+     - uses: pypa/gh-action-pypi-publish@release/v1 # https://github.com/pypa/gh-action-pypi-publish
+       with:
+         user: "__token__"
+         password: ${{ secrets.PYPITOKEN }}

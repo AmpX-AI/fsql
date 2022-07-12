@@ -8,7 +8,8 @@ The core is installed just via `pip install fsql`. Additional filesystem support
 
 For examples of usage, we use selected test files accompanied with explanatory comments:
 1. [basic usage](tests/test_example_usage.py),
-2. [date range utils](tests/test_daterange.py).
+2. [date range utils](tests/test_daterange.py),
+3. [integrating with Dask](tests/test_dask.py).
 
 ## Use Cases & Features
 The canonical usecase is that you have data on `S3` stored e.g. as `<table_name>/year=<yyyy>/month=<mm>/day=<dd>/<filename>.csv`, and you want to fetch a part of it (e.g., a week from the last month, every Monday last year, ...) as a single Pandas or Dask DataFrame, via a short command -- without having to write the `boto3` crawl, the bytes2csv, the csv2pandas, etc.

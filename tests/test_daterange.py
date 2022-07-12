@@ -48,3 +48,7 @@ def test_daterange_utils(tmp_path):
     result_parser = read_partitioned_table(f"file://{tmp_path}/", Q_TRUE, parser)
 
     assert_frame_equal(result_parser, expect)
+
+    # Note that if you use a long date range, you may end up with a large number of files being merged
+    # into a single dataframe. This is one of situations where using Dask may make sense -- feel free to
+    # head over to test_dask
