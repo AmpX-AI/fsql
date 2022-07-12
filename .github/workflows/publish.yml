@@ -37,10 +37,6 @@ jobs:
        with:
          python-version: 3.8.8
      - run: make build
-     - uses: actions/upload-archive@v2
-       with:
-         name: package-distribution
-         path: dist
      - uses: pypa/gh-action-pypi-publish@release/v1 # https://github.com/pypa/gh-action-pypi-publish
        with:
          user: "__token__"
