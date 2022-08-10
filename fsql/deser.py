@@ -92,7 +92,7 @@ class InputFormat(Enum):
 DataObject = TypeVar("DataObject")
 
 
-class DataObjectRich(NamedTuple, Generic[DataObject]):
+class DataObjectRich(Generic[DataObject]):
     data: DataObject
     failures: Iterable[PartitionReadFailure]
 
