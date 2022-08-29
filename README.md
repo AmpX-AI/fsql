@@ -6,7 +6,7 @@ The package has querying capabilities, thus the name stands for "file system que
 ## Quick Start
 The core is installed just via `pip install fsql`. Additional filesystem support or output representation is installed via `pip install fsql[s3]` or `pip install fsql[dask]`.
 
-For examples of usage, we use selected test files accompanied with explanatory comments:
+For examples of usage (and sort-of documentation), we use selected test files accompanied with explanatory comments:
 1. [basic usage](tests/test_example_usage.py),
 2. [date range utils](tests/test_daterange.py),
 3. [integrating with Dask](tests/test_dask.py).

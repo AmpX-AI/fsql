@@ -6,6 +6,10 @@ the operation.  There are the following default instances:
    and concatenates all the individual sub-frames into a single one
  - EnumeratedDictReader, which reads the data as a dictionary, adds the partition columns as dict
    keys, and concatenates into an enumerated dict (order being the alphabetic of underlying files)
+ - IdentityReader, which returns a list of all matching underlying files, along with the dictionary
+   of the partition values, and a callback for actual download of the file. This is used if specific
+   batching/postprocessing is desired, and the user does not want to implement a specialised reader.
+   In other words, this is a fancy `ls` functionality within `fsql`.
 
 All these autodetect the input format from the suffix of the key. If this is desired to be
 overridden with a fixed format, user should instantiate with the desired InputFormat.
@@ -45,12 +49,14 @@ from abc import abstractmethod
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from enum import Enum, auto, unique
 from functools import partial, reduce
 from itertools import chain
-from typing import Generic, Iterable, NamedTuple, Tuple, TypeVar, Union
+from typing import Any, Generic, Iterable, NamedTuple, Tuple, TypeVar, Union
 
 import pandas as pd
+from fsspec.core import OpenFile
 from fsspec.spec import AbstractFileSystem
 
 from fsql import assert_exhaustive_enum
@@ -260,3 +266,35 @@ class EnumeratedDictReader(DataReader[dict]):
 
 
 ENUMERATED_DICT_READER = EnumeratedDictReader()
+
+
+@dataclass
+class FileInPartition:
+    file_url: str
+    partition_values: dict
+    fs: AbstractFileSystem
+
+    def consume(self, fd_consumer: Callable[[OpenFile], Any]):
+        with self.fs.open(self.file_url) as fd:
+            try:
+                return fd_consumer(fd)
+            except FileNotFoundError as e:
+                logger.warning(
+                    f"file {self.file_url} reading exception {type(e)}, attempting cache invalidation and reread"
+                )
+                self.fs.invalidate_cache()
+                return fd_consumer(fd)
+
+
+class IdentityReader(DataReader[Iterable[FileInPartition]]):
+    """Think of this as a fancy `ls`."""
+
+    def read_single(self, partition: Partition, fs: AbstractFileSystem) -> PartitionReadOutcome:
+        return [[FileInPartition(file_url=partition.url, partition_values=partition.columns, fs=fs)]], []
+
+    def concat(self, outcomes: Iterable[Iterable[FileInPartition]]) -> Iterable[FileInPartition]:
+        data: Iterable[FileInPartition] = chain(*outcomes)
+        return data  # type: ignore
+
+
+IDENTITY_READER = IdentityReader()
