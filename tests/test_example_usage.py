@@ -111,3 +111,8 @@ def test_multiple_files(tmp_path):
     # a year-month-day table, and you want the 1st and the 15th day of months in Q1, you can go with
     # `year=2022/month=[1,2,3]/day=[1,15]`. If, however, your query is a date range such as from the 14th June to
     # 17th September, you better head over to `test_daterange` which shows advanced capabilities.
+
+    # You can now continue with either [date range utils](tests/test_daterange.py), or
+    # [integrating with Dask](tests/test_dask.py). Furthermore, there is IdentityReader which provides a fancy `ls`
+    # functionality. Lastly, you may want to inspect the `fsql/__init__.py` for information how to configure the S3
+    # credentials.
