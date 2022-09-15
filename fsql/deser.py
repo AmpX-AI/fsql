@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum, auto, unique
 from functools import partial, reduce
 from itertools import chain
-from typing import Any, Generic, Iterable, NamedTuple, Tuple, TypeVar, Union
+from typing import Any, Generic, Iterable, Tuple, TypeVar, Union
 
 import pandas as pd
 from fsspec.core import OpenFile
@@ -98,12 +98,14 @@ class InputFormat(Enum):
 DataObject = TypeVar("DataObject")
 
 
-class DataObjectRich(NamedTuple, Generic[DataObject]):
+@dataclass(frozen=True)
+class DataObjectRich(Generic[DataObject]):
     data: DataObject
     failures: Iterable[PartitionReadFailure]
 
 
-class PartitionReadFailure(NamedTuple):
+@dataclass(frozen=True)
+class PartitionReadFailure:
     partition: Partition
     reason: str  # or Any?
 

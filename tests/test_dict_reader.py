@@ -39,5 +39,5 @@ def test_lazy_errors(tmp_path):
 
     lazy_reader = EnumeratedDictReader(lazy_errors=True)
     result = read_partitioned_table(f"file://{case1_path}/", Q_TRUE, data_reader=lazy_reader)
-    assert result[0] == {0: json.loads(data1)}
-    assert [error_line] == [e.reason for e in result[1]]
+    assert result.data == {0: json.loads(data1)}
+    assert [error_line] == [e.reason for e in result.failures]
