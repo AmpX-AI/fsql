@@ -6,13 +6,17 @@ on:
 jobs:
   test-suite:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ '3.8.8', '3.9.12' ]
+    name: Python ${{ matrix.python-version }} test
     steps:
      - uses: actions/checkout@v3
        with:
          fetch-depth: 0
      - uses: actions/setup-python@v2
        with:
-         python-version: 3.8.8
+         python-version: ${{ matrix.python-version }}
      - run: make static-analysis test-suite
      # - uses: actions/upload-artifact@v3 # todo -- this would use some easily displayable artifact
      #   with:
