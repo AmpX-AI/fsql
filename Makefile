@@ -1,3 +1,6 @@
+# you can override this variable when you have eg .venv-py38 and .venv-py39
+VENV_CORE=.venv
+
 clean: ## remove build artifacts
 	rm -fr build/
 	rm -fr dist/
@@ -15,15 +18,16 @@ clean: ## remove build artifacts
 	rm -rf .cache
 	rm -rf .pytest_cache
 	rm -rf .mypy_cache
-	rm -rf .venv-precommit
-	rm -rf .venv-test
+	rm -rf "${VENV_CORE}-precommit"
+	rm -rf "${VENV_CORE}-test"
+	rm -rf "${VENV_CORE}-build"
 	rm -f index.html
 
 static-analysis: ## run mypy, black, flake, etc
 	(\
 		set -e ; \
-		python -m venv .venv-precommit; \
-		. .venv-precommit/bin/activate; \
+		python -m venv "${VENV_CORE}-precommit"; \
+		. "${VENV_CORE}-precommit/bin/activate"; \
 		pip install -U pip; \
 		pip install pre-commit; \
 		pre-commit install --install-hooks; \
@@ -33,8 +37,8 @@ static-analysis: ## run mypy, black, flake, etc
 test-suite: ## install new venv, run tests and coverage
 	(\
 		set -e ; \
-		python -m venv .venv-test; \
-		. .venv-test/bin/activate; \
+		python -m venv "${VENV_CORE}-test"; \
+		. "${VENV_CORE}-test/bin/activate"; \
 		pip install -U pip; \
 		pip install .[test]; \
 		coverage run --source fsql -m pytest --junit-xml=results.xml tests/; \
@@ -48,8 +52,8 @@ install-edit: clean ## install the package in editable mode
 build: clean
 	(\
 		set -e ; \
-		python -m venv .venv-build; \
-		. .venv-build/bin/activate; \
+		python -m venv "${VENV_CORE}-build"; \
+		. "${VENV_CORE}-build/bin/activate"; \
 		pip install -U pip; \
 		pip install -U build; \
 		if [ "$$GITHUB_REF_TYPE" = "tag" ] ; then export TARGET_VERSION=$$GITHUB_REF_NAME ; \
