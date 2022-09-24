@@ -51,6 +51,6 @@ def test_lazy_errors(tmp_path):
         result = read_partitioned_table(f"file://{case1_path}/", Q_TRUE, data_reader=reader_eager)
     reader_lazy = PandasReader(columns=["c3"], lazy_errors=True)
     result = read_partitioned_table(f"file://{case1_path}/", Q_TRUE, data_reader=reader_lazy)
-    assert_frame_equal(df2[["c3"]], result[0])
-    reasons = [e.reason.split("\n")[0] for e in result[1]]
+    assert_frame_equal(df2[["c3"]], result.data)
+    reasons = [e.reason.split("\n")[0] for e in result.failures]
     assert reasons == [error_line]
