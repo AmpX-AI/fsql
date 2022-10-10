@@ -55,6 +55,8 @@ def discover_partitions(
     # but that may actually be upside. Also, the separation between files and directories does feel a bit artificial
     # here
     logger.debug(f"partition discovery with query {query} and partition {partition}")
+    if not partition.url.endswith("/"):
+        partition.url += "/"  # required due to fsspec.ls not appending '/' to listed directories
     generated_partitions = column_parser.generate()
     if generated_partitions:
         if column_parser.is_terminal_level():
@@ -62,8 +64,6 @@ def discover_partitions(
         else:
             listing = DirectoryListing(files=[], directories=[partition + "/" for partition in generated_partitions])
     else:
-        if not partition.url.endswith("/"):
-            partition.url += "/"  # required due to fsspec.ls not appending '/' to listed directories
         listing = list_directory(partition.url, fs)
 
     subdir_partitions = (partition.expand_by(item, column_parser(item)) for item in listing.directories)

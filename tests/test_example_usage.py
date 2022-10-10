@@ -67,23 +67,35 @@ def test_multiple_files(tmp_path):
     partition2 = tmp_path / "col1=4" / "col2=6" / "colX=b"
     partition2.mkdir(parents=True)
     df2.to_json(partition2 / "f2.json", orient="records", lines=True)
-    partition3 = tmp_path / "col1=2" / "col2=7" / "colX=c"
+    partition3 = tmp_path / "col1=9" / "col2=6" / "colX=b"
     partition3.mkdir(parents=True)
     df3.to_json(partition3 / "f3.json", orient="records", lines=True)
 
     # AutoParser is what we use to call the =-format. Here, we add desired values for the columns
     # We specify a single value for col1, a list for col2, and colX can be anything
     parser = AutoParser.from_str("col1=4/col2=[5,6]/colX")
-    case1_result = read_partitioned_table(f"file://{tmp_path}", Q_TRUE, parser)
+    case1a_result = read_partitioned_table(f"file://{tmp_path}", Q_TRUE, parser)
 
-    # we omitted the col1=2, thus the df3/partition3 is not expected
-    case1_expected = pd.concat(
+    # we omitted the col1=9, thus the df3/partition3 is not expected
+    case1a_expected = pd.concat(
         [
             df1.assign(col1="4", col2="5", colX="a"),
             df2.assign(col1="4", col2="6", colX="b"),
         ]
     )
-    assert_frame_equal(case1_expected, case1_result)
+    assert_frame_equal(case1a_expected, case1a_result)
+
+    # if you don't specify a value of a column, it is taken as `*`
+    parser = AutoParser.from_str("col1/col2=[6]/colX")
+    case1b_result = read_partitioned_table(f"file://{tmp_path}", Q_TRUE, parser)
+    # now we don't expect df1 instead: col1=4/col2=5 -- the col1 condition is ok, but col2 is not
+    case1b_expected = pd.concat(
+        [
+            df2.assign(col1="4", col2="6", colX="b"),
+            df3.assign(col1="9", col2="6", colX="b"),
+        ]
+    )
+    assert_frame_equal(case1b_expected, case1b_result)
 
     # For the second case, we use a real Query -- that means a function (colNames*) -> bool
     # We can specify only a subset of columns -- and we should, so that the query can be evaluated early
@@ -92,10 +104,10 @@ def test_multiple_files(tmp_path):
         return hashlib.md5((col2 + colX).encode("ascii")).hexdigest()[0] == "d"
 
     weird_query = AtomicQuery(weird_query_func)
-    query = Q_AND(Q_EQ("col1", "2"), weird_query)  # this will let only df3 through
+    query = Q_AND(Q_EQ("col1", "9"), weird_query)  # this combination lets only df3 through
     case2_result = read_partitioned_table(f"file://{tmp_path}/", query)
 
-    case2_expected = df3.assign(col1="2", col2="7", colX="c")
+    case2_expected = df3.assign(col1="9", col2="6", colX="b")
     assert_frame_equal(case2_expected, case2_result)
 
     # You can mix up queries and explicit lists of partition values in parser. In general, prefer explicit lists,
