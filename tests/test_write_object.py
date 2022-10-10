@@ -74,3 +74,16 @@ def test_wrong_formats():
     bf = io.StringIO("hello")
     with pytest.raises(ValueError):
         write_object("file://whatever", bf, "parquet")
+
+    just_bytes = b"hello"
+    with pytest.raises(ValueError, match=r"cannot infer writer.*"):
+        write_object("file://whatever", just_bytes)
+
+
+def test_write_vanilla_bytes(tmpdir):
+    path = tmpdir.join("f1")
+    data = b"ahoj"
+    write_object(f"file://{path}", io.BytesIO(data))
+    with open(path, "rb") as f:
+        extracted = f.read()
+    assert extracted == data

@@ -156,3 +156,5 @@ def write_object(
         mode = "wb" if isinstance(data, io.BytesIO) else "w"
         with fs.open(url_suff, mode) as fd:
             shutil.copyfileobj(data, fd)
+    else:
+        raise ValueError(f"cannot infer writer for object of type {type(data)}")
