@@ -277,14 +277,15 @@ class FileInPartition:
     fs: AbstractFileSystem
 
     def consume(self, fd_consumer: Callable[[OpenFile], Any]):
-        with self.fs.open(self.file_url) as fd:
-            try:
+        try:
+            with self.fs.open(self.file_url) as fd:
                 return fd_consumer(fd)
-            except FileNotFoundError as e:
-                logger.warning(
-                    f"file {self.file_url} reading exception {type(e)}, attempting cache invalidation and reread"
-                )
-                self.fs.invalidate_cache()
+        except FileNotFoundError as e:
+            logger.warning(
+                f"file {self.file_url} reading exception {type(e)}, attempting cache invalidation and reread"
+            )
+            self.fs.invalidate_cache()
+            with self.fs.open(self.file_url) as fd:
                 return fd_consumer(fd)
 
 
