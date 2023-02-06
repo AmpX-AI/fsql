@@ -9,7 +9,7 @@ clean: ## remove build artifacts
 	find . -name '*.egg' -exec rm -f {} +
 	find . -name '*.pyc' -exec rm -f {} +
 	find . -name '*.pyo' -exec rm -f {} +
-	find ./fsql/ -name '*.so' -exec rm -f {} +
+	find ./src/ -name '*.so' -exec rm -f {} +
 	find . -name '*~' -exec rm -f {} +
 	find . -name '__pycache__' -exec rm -fr {} +
 	rm -f results.xml
