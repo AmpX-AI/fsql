@@ -1,4 +1,5 @@
 import io
+import json
 
 import pandas as pd
 import pytest
@@ -87,3 +88,28 @@ def test_write_vanilla_bytes(tmpdir):
     with open(path, "rb") as f:
         extracted = f.read()
     assert extracted == data
+
+
+def test_write_json_s3(helper):
+    """Writes a dataframe as json, tests that read works."""
+    bucket = "test-bouquet"
+    fs = helper.s3fs
+    fs.mkdir(bucket)
+
+    input = pd.DataFrame({"k1": [1, 2], "k2": [3, 4]}, index=["one", "two"])
+    write_object("s3://test-bouquet/my_df.json", input, format="json")
+    output = helper.read_json_file("s3://test-bouquet/my_df.json")
+    expected_output = {"k1": {"one": 1, "two": 2}, "k2": {"one": 3, "two": 4}}
+    assert output == expected_output
+
+
+def test_write_json(tmpdir):
+    """Writes a json file, tests that read works."""
+    input = pd.DataFrame({"k1": [1, 2], "k2": [3, 4]}, index=["one", "two"])
+    path_base = tmpdir.join("my_file.json")
+    url = f"file://{path_base}"
+    write_object(url, input, format="json")
+    with open(path_base, "r") as f:
+        output = json.load(f)
+    expected_output = {"k1": {"one": 1, "two": 2}, "k2": {"one": 3, "two": 4}}
+    assert output == expected_output
