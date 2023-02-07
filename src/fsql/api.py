@@ -147,6 +147,9 @@ def write_object(
         elif format == "csv":
             with fs.open(url_suff, "wb") as fd:
                 data.to_csv(fd)
+        elif format == "json":
+            with fs.open(url_suff, "wb") as fd:
+                data.to_json(fd)
         else:
             raise ValueError(f"unsupported format for dataframe writing: {format}")
     elif isinstance(data, io.StringIO) or isinstance(data, io.BytesIO):

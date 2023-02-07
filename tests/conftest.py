@@ -1,4 +1,5 @@
 """Sets a mock/fake of the S3 filesystem for any `fsql`-based usage."""
+import json
 import os
 
 import fsspec
@@ -13,6 +14,10 @@ class Helper:
     def put_s3_file(self, data, url):
         with self.s3fs.open(url, "wb") as fd:
             fd.write(data)
+
+    def read_json_file(self, url):
+        with self.s3fs.open(url, "r") as fd:
+            return json.load(fd)
 
 
 @pytest.fixture
