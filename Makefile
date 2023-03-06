@@ -40,7 +40,7 @@ test-suite: ## install new venv, run tests and coverage
 		python -m venv "${VENV_CORE}-test"; \
 		. "${VENV_CORE}-test/bin/activate"; \
 		pip install -U pip; \
-		pip install .[test]; \
+		pip install -e .[test]; \
 		coverage run --source fsql -m pytest --junit-xml=results.xml tests/; \
 		coverage report -m; \
 		coverage html; \
