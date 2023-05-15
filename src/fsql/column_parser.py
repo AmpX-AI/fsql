@@ -84,12 +84,24 @@ class ColumnParser(ABC):
 
 
 class AutoParser(ColumnParser):
-    def __init__(self, partition_grammars: Optional[list[PartitionGrammar]] = None):
+    def __init__(self, partition_grammars: Optional[list[PartitionGrammar]] = None, parse_filenames: bool = False):
         self.partitions = partition_grammars
+        self._parse_filenames = parse_filenames
+        self._fname_column = "fname"  # default name, can be changed by setter
 
     def __call__(self, dirname: str) -> tuple[str, str]:
+        if self.parses_filenames() and "=" not in dirname:
+            return self.fname_column, dirname.strip("/")
         key, value = dirname.strip("/").split("=", 1)
         return key, value  # we don't return directly due to mypy not understanding split(_, 1)
+
+    @property
+    def fname_column(self):
+        return self._fname_column
+
+    @fname_column.setter
+    def fname_column(self, value):
+        self._fname_column = value
 
     def tail(self, partition: Partition) -> ColumnParser:
         if not self.partitions:
@@ -100,7 +112,7 @@ class AutoParser(ColumnParser):
             return AutoParser(self.partitions[1:])
 
     def parses_filenames(self) -> bool:
-        return False
+        return self._parse_filenames
 
     def is_terminal_level(self) -> bool:
         # NOTE a quirk -- if partitions not provided, we read files at every stage of crawling, and thus
