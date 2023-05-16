@@ -66,8 +66,9 @@ class ColumnParser(ABC):
         raise NotImplementedError("abc")
 
     @classmethod
-    def from_str(cls, path_description: str):
+    def from_str(cls, path_description: str, **kwargs):
         """Example: col1/col2=v1/col3=[v4,v5,v6]/colFname"""
+
         # NOTE this whole method better be replaced with a proper parser
         def process_single_partition(partition_desc: str):
             eq_split = partition_desc.split("=")
@@ -80,11 +81,13 @@ class ColumnParser(ABC):
                     return PartitionGrammar(eq_split[0], [eq_split[1]])
 
         # not sure how to correctly handle this -- I don't want to declare the __init__ here abstract...
-        return cls([process_single_partition(e) for e in path_description.split("/")])  # type: ignore
+        return cls([process_single_partition(e) for e in path_description.split("/")], **kwargs)  # type: ignore
 
 
 class AutoParser(ColumnParser):
-    def __init__(self, partition_grammars: Optional[list[PartitionGrammar]] = None, parse_filenames_as: Optional[str] = None):
+    def __init__(
+        self, partition_grammars: Optional[list[PartitionGrammar]] = None, parse_filenames_as: Optional[str] = None
+    ):
         """Inits AutoParser.
 
         Args:
@@ -96,7 +99,7 @@ class AutoParser(ColumnParser):
 
     def __call__(self, dirname: str) -> tuple[str, str]:
         if self.parses_filenames() and "=" not in dirname:
-            return self.parse_filenames_as, dirname.strip("/")
+            return self.parse_filenames_as, dirname.strip("/")  # type: ignore
         key, value = dirname.strip("/").split("=", 1)
         return key, value  # we don't return directly due to mypy not understanding split(_, 1)
 
@@ -106,7 +109,7 @@ class AutoParser(ColumnParser):
         else:
             # TODO performance issue
             # ideally, the pop call would return an existing instance, which would be pre-created...
-            return AutoParser(self.partitions[1:])
+            return AutoParser(self.partitions[1:], self.parse_filenames_as)
 
     def parses_filenames(self) -> bool:
         return self.parse_filenames_as is not None
@@ -118,6 +121,11 @@ class AutoParser(ColumnParser):
         # In the same vein, we don't guarantee even that the columns are the same for every partition.
         # For that, however, the best we could do is crash in case of inconsistency...
         if not self.partitions:
+            return True
+        # special case when parses_filenames is enabled
+        elif (
+            self.parses_filenames() and len(self.partitions) == 1 and self.partitions[0].name == self.parse_filenames_as
+        ):
             return True
         else:
             return len(self.partitions) == 0

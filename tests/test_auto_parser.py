@@ -64,3 +64,20 @@ def test_auto_parser_with_fname_mixed(tmp_path):
     with pytest.raises(ValueError, match="duplicate key inserted: fname"):
         query = Q_AND(Q_EQ("col1", "4"), Q_EQ("fname", "col2"))  # to show confusion that can arise with mixed structure
         read_partitioned_table(f"file://{tmp_path}/", query, AutoParser(parse_filenames_as="fname"))
+
+
+def test_auto_parser_fname_with_from_str(tmp_path):
+    """Tests AutoParser works when combining filtering through 'from_str' method and fname query."""
+    partition1 = tmp_path / "col=a"
+    partition1.mkdir(parents=True)
+    df1.to_json(partition1 / "a1.json", orient="records", lines=True)
+    partition2 = tmp_path / "col=b"
+    partition2.mkdir(parents=True)
+    df2.to_json(partition2 / "a2.json", orient="records", lines=True)
+    df3.to_json(partition2 / "a1.json", orient="records", lines=True)
+
+    parser = AutoParser.from_str("col=b/fname", parse_filenames_as="fname")
+    case2_result = read_partitioned_table(f"file://{tmp_path}/", Q_EQ("fname", "a1.json"), parser)
+
+    case2_expected = df3.assign(col="b", fname="a1.json")
+    assert_frame_equal(case2_expected, case2_result)
