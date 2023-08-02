@@ -2,7 +2,7 @@ import pandas as pd
 from pandas.testing import assert_frame_equal
 
 from fsql.api import read_partitioned_table
-from fsql.column_parser import AutoParser
+from fsql.column_parser import AutoParser, FixedColumnsParser
 from fsql.deser import IDENTITY_READER
 from fsql.query import Q_TRUE
 
@@ -53,3 +53,20 @@ def test_identity_reader(tmp_path):
     assert_frame_equal(df1, case2_deserd1)
     case2_deserd2 = case2_result[1].consume(pd.read_csv)
     assert_frame_equal(df2, case2_deserd2)
+
+
+def test_identity_reader_with_fname(tmp_path):
+    table_prefix = tmp_path / "table"
+    table_prefix_dir = table_prefix / "subdir"
+    table_prefix_dir.mkdir(parents=True)
+    df1.to_csv(table_prefix_dir / "f1.csv", index=False)
+
+    parser = FixedColumnsParser.from_str("table/fname")
+    result_r = read_partitioned_table(
+        f"file://{table_prefix}/", Q_TRUE, column_parser=parser, data_reader=IDENTITY_READER
+    )
+    result = list(result_r)
+
+    assert len(result) == 1
+    assert result[0].file_url == f"/{table_prefix}/subdir/f1.csv"
+    assert result[0].partition_values == {"table": "subdir", "fname": "f1.csv"}

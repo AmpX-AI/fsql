@@ -4,7 +4,7 @@ from pandas.testing import assert_frame_equal
 
 from fsql.api import read_partitioned_table
 from fsql.column_parser import AutoParser
-from fsql.query import Q_AND, Q_EQ, AtomicQuery
+from fsql.query import Q_AND, Q_EQ, Q_TRUE, AtomicQuery
 
 df1 = pd.DataFrame(data={"c1": [0, 1], "c2": ["hello", "world"]})
 df2 = pd.DataFrame(data={"c1": [2, 3], "c2": ["salve", "mundi"]})
@@ -76,8 +76,15 @@ def test_auto_parser_fname_with_from_str(tmp_path):
     df2.to_json(partition2 / "a2.json", orient="records", lines=True)
     df3.to_json(partition2 / "a1.json", orient="records", lines=True)
 
-    parser = AutoParser.from_str("col=b/fname", parse_filenames_as="fname")
+    parser = AutoParser.from_str("col=b", fname="fname")
     case2_result = read_partitioned_table(f"file://{tmp_path}/", Q_EQ("fname", "a1.json"), parser)
+
+    case2_expected = df3.assign(col="b", fname="a1.json")
+    assert_frame_equal(case2_expected, case2_result)
+
+    # using fname query directly should give the same result
+    parser = AutoParser.from_str("col=b", fname="fname=[a1.json]")
+    case2_result = read_partitioned_table(f"file://{tmp_path}/", Q_TRUE, parser)
 
     case2_expected = df3.assign(col="b", fname="a1.json")
     assert_frame_equal(case2_expected, case2_result)
