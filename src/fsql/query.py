@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Callable, Optional
 
@@ -122,23 +122,34 @@ class ColumnRange:
     name: str
     min_value: str
     max_value: str
-    column_comparator: ColumnComparator = ColumnComparator.lex
+    column_comparator: ColumnComparator = field(default=ColumnComparator.lex)
+
+    def __post_init__(self):
+        if self.column_comparator.compare(self.min_value, self.max_value) > 0:
+            raise ValueError(f"invalid range: {self}")
 
 
 class SimpleRangeQuery(Query):
     """This is a query to return all files that lie >= c1=s1/c2=s2/... but < c1=e1/c2=e2/...
+    It is a lexicographical comparator -- if c1<s1, then c2 can be well above e2 but the file is still accepted.
+    Similarly, if c1=s1, then c2 can be arbitrarily large, but must not be <s2.
+    Beware that the interval is half-open (so >=, but <) -- those are purposefully chosen for their convenient
+    algebric properties -- [p1, p2) + [p2, p3) == [p1, p3).
+
     Usage of generators is prefered if the range can be explicitly generated (e.g., for Date Columns), but
     in general case this does the job as well. ColumnComparator can be used to distinguish between:
          - wld: a wildcard, any value in the given column satisfies but comparison continues,
          - num: values are treated numerically, that is, 9 < 10. However, all partition values must be `int()`,
          - lex: the default, values are compared lexicographically.
 
-    See tests/test_simple_range_query.py for examples"""
+    See tests/test_simple_range_query.py for more examples"""
 
     def __init__(self, ranges: list[ColumnRange]):
         self.ranges = ranges
 
     def _eval_generic(self, columns: dict[str, str], on_early_stop: bool) -> bool:
+        at_minimum = False
+        at_maximum = False
         for c in self.ranges:
             if c.name not in columns:
                 return on_early_stop
@@ -147,12 +158,16 @@ class SimpleRangeQuery(Query):
             value = columns[c.name]
             left = c.column_comparator.compare(c.min_value, value)
             right = c.column_comparator.compare(value, c.max_value)
-            if left < 0 and right < 0:
+            if (left < 0 or at_maximum) and (right < 0 or at_minimum):
                 return True
             if left == 0:
+                at_minimum = True
+                continue
+            if right == 0:
+                at_maximum = True
                 continue
             return False
-        return True
+        return not at_maximum
 
     def eval_all(self, columns: dict[str, str]) -> bool:
         return self._eval_generic(columns, False)
