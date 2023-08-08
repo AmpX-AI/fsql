@@ -129,20 +129,20 @@ class ColumnRange:
             raise ValueError(f"invalid range: {self}")
 
 
-class SimpleRangeQuery(Query):
+class LexRangeQuery(Query):
     """This is a query to return all files that lie >= c1=s1/c2=s2/... but < c1=e1/c2=e2/...
-    It is a lexicographical comparator -- if c1<s1, then c2 can be well above e2 but the file is still accepted.
+    It is a lexicographical comparator -- if c1<e1, then c2 can be well above e2 but the file is still accepted.
     Similarly, if c1=s1, then c2 can be arbitrarily large, but must not be <s2.
     Beware that the interval is half-open (so >=, but <) -- those are purposefully chosen for their convenient
-    algebric properties -- [p1, p2) + [p2, p3) == [p1, p3).
+    algebraic properties -- [p1, p2) + [p2, p3) == [p1, p3).
 
-    Usage of generators is prefered if the range can be explicitly generated (e.g., for Date Columns), but
+    Usage of generators is preferred if the range can be explicitly generated (e.g., for Date Columns), but
     in general case this does the job as well. ColumnComparator can be used to distinguish between:
          - wld: a wildcard, any value in the given column satisfies but comparison continues,
          - num: values are treated numerically, that is, 9 < 10. However, all partition values must be `int()`,
          - lex: the default, values are compared lexicographically.
 
-    See tests/test_simple_range_query.py for more examples"""
+    See tests/test_lex_range_query.py for more examples"""
 
     def __init__(self, ranges: list[ColumnRange]):
         self.ranges = ranges

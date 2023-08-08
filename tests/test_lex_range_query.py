@@ -3,21 +3,25 @@ import pytest
 from pandas.testing import assert_frame_equal
 
 from fsql.api import read_partitioned_table
-from fsql.query import Q_AND, Q_EQ, Q_OR, ColumnComparator, ColumnRange, SimpleRangeQuery
+from fsql.query import Q_AND, Q_EQ, Q_OR, ColumnComparator, ColumnRange, LexRangeQuery
 
 
-def test_invalid_ranges():
-    [
+def test_valid_ranges():
+    # just testing that this does not raise is enough
+    assert [
         ColumnRange("any", 1, 3, ColumnComparator.num),
         ColumnRange("any", "a", "a"),
     ]
-    with pytest.raises(ValueError):
+
+
+def test_invalid_ranges():
+    with pytest.raises(ValueError, match="invalid range"):
         ColumnRange("any", 2, 1, ColumnComparator.num)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="invalid range"):
         ColumnRange("any", "c", "b")
 
 
-def test_simple_range_query1(tmp_path):
+def test_lex_range_query1(tmp_path):
     # this corresponds to c1=[b, d), c2=*, c3=[c, d)
     ranges = [
         ColumnRange("c1", "b", "d"),
@@ -41,7 +45,7 @@ def test_simple_range_query1(tmp_path):
         df = pd.DataFrame({"k": [i]})
         df.to_csv(p / "f.csv", index=False)
 
-    query = SimpleRangeQuery(ranges=ranges)
+    query = LexRangeQuery(ranges=ranges)
     result_query = read_partitioned_table(f"file://{tmp_path}/", query)
     result_query = result_query.sort_values(by=["k"]).reset_index(drop=True)
 
@@ -52,7 +56,7 @@ def test_simple_range_query1(tmp_path):
     assert_frame_equal(result_query, expect)
 
 
-def test_simple_range_query2(tmp_path):
+def test_lex_range_query2(tmp_path):
     # this corresponds to c1=[3, 27)
     ranges = [
         ColumnRange("c1", "3", "27", ColumnComparator.num),
@@ -72,7 +76,7 @@ def test_simple_range_query2(tmp_path):
         df = pd.DataFrame({"k": [i]})
         df.to_csv(p / "f.csv", index=False)
 
-    query = SimpleRangeQuery(ranges=ranges)
+    query = LexRangeQuery(ranges=ranges)
     result_query = read_partitioned_table(f"file://{tmp_path}/", query)
     result_query = result_query.sort_values(by=["k"]).reset_index(drop=True)
 
@@ -82,7 +86,7 @@ def test_simple_range_query2(tmp_path):
 
 
 def test_combination(tmp_path):
-    range_q = SimpleRangeQuery(ranges=[ColumnRange("c1", "1", "5", ColumnComparator.num)])
+    range_q = LexRangeQuery(ranges=[ColumnRange("c1", "1", "5", ColumnComparator.num)])
     equal_q = Q_EQ("c1", "7")
     or_q = Q_OR(equal_q, range_q)
     and_q = Q_AND(equal_q, range_q)
@@ -106,5 +110,5 @@ def test_combination(tmp_path):
 
     assert_frame_equal(result_query_or, expect_or)
 
-    with pytest.raises(ValueError):  # no objects to concatenate raises... TODO empty df would be nicer
+    with pytest.raises(ValueError, match="No objects to concatenate"):  # TODO empty df would be nicer
         read_partitioned_table(f"file://{tmp_path}/", and_q)
