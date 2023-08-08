@@ -29,7 +29,6 @@ FixedColumns parser using the `from_str` methods -- see their individual documen
 from __future__ import annotations
 
 import logging
-import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
@@ -182,12 +181,9 @@ class FixedColumnsParser(ColumnParser):
     @classmethod
     def from_str(cls, path_description: str, fname: str | None = None):
         if fname is None:
-            warnings.warn(
-                "Using `fname` directly in the path was deprecated and will be removed in the future. "
-                "To avoid future incompatibilities, replace `FixedColumnsParser.from_str('c1/c2/fname')` "
-                "with `FixedColumnsParser.from_str('c1/c2', fname='fname')`",
-                FutureWarning,
-                stacklevel=3,
+            logger.warning(
+                "For unambiguity, replace `FixedColumnsParser.from_str('c1/c2/fname')` "
+                "with `FixedColumnsParser.from_str('c1/c2', fname='fname')`"
             )
             path_description, fname = path_description.rsplit("/", 1)
         return super().from_str(path_description, fname)
