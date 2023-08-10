@@ -10,7 +10,7 @@ import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Optional
+from typing import Callable, Optional, Iterable
 
 # TODO
 # - query should impl some caching mechanism for partitions, to not re-eval over and over
@@ -79,6 +79,13 @@ def Q_OR(l: Query, r: Query) -> Query:  # noqa: E741
 def Q_EQ(column: str, value: str):
     def f(**kwargs):  # TODO how to define f(`column`) ? That would simplify AtomicQuery then
         return kwargs[column] == value
+
+    return AtomicQuery(f, set([column]))
+
+
+def Q_IN(column: str, values: Iterable):
+    def f(**columns):
+        return columns[column] in values
 
     return AtomicQuery(f, set([column]))
 
