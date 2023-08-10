@@ -10,7 +10,7 @@ import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Optional, Iterable
+from typing import Callable, Iterable, Optional
 
 # TODO
 # - query should impl some caching mechanism for partitions, to not re-eval over and over
