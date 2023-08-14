@@ -77,8 +77,8 @@ def Q_OR(l: Query, r: Query) -> Query:  # noqa: E741
 
 
 def Q_EQ(column: str, value: str):
-    def f(**kwargs):  # TODO how to define f(`column`) ? That would simplify AtomicQuery then
-        return kwargs[column] == value
+    def f(**columns):  # TODO how to define f(`column`) ? That would simplify AtomicQuery then
+        return columns[column] == value
 
     return AtomicQuery(f, set([column]))
 
