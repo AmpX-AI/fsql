@@ -157,7 +157,7 @@ class DateRangeGenerator(ColumnParser):
         return [f"{pref}{str(e)}" for e in int_range]
 
     @classmethod
-    def from_str(cls, path_description: str):
+    def from_str(cls, **kwargs):
         raise NotImplementedError(f"class {cls} does not support this method")
 
     @classmethod

@@ -66,8 +66,17 @@ class ColumnParser(ABC):
         raise NotImplementedError("abc")
 
     @classmethod
-    def from_str(cls, path_description: str):
-        """Example: col1/col2=v1/col3=[v4,v5,v6]/colFname"""
+    def from_str(cls, path_description: str, fname: str | None = None):
+        """Creates a parser by processing partitions from the given path.
+
+        Example of path description: "col1/col2=v1/col3=[v4,v5,v6]". If filename should be parsed as well,
+        provide either the name of the partition (like `fname="fname"`) or as query (`fname="myfile=f1.csv"`).
+
+        Args:
+            path_description: Description of path to be parsed (it can contain filters, see the example).
+            fname: Name of file partition (can contain filters as well). If None, filenames are not parsed.
+        """
+
         # NOTE this whole method better be replaced with a proper parser
         def process_single_partition(partition_desc: str):
             eq_split = partition_desc.split("=")
@@ -79,15 +88,32 @@ class ColumnParser(ABC):
                 else:
                     return PartitionGrammar(eq_split[0], [eq_split[1]])
 
+        path_description = path_description.strip("/")
         # not sure how to correctly handle this -- I don't want to declare the __init__ here abstract...
-        return cls([process_single_partition(e) for e in path_description.split("/")])  # type: ignore
+        if fname is not None:
+            return cls(
+                [process_single_partition(e) for e in path_description.split("/") + [fname]],
+                fname.split("=")[0],
+            )  # type: ignore
+        return cls([process_single_partition(e) for e in path_description.split("/")], fname)  # type: ignore
 
 
 class AutoParser(ColumnParser):
-    def __init__(self, partition_grammars: Optional[list[PartitionGrammar]] = None):
+    def __init__(
+        self, partition_grammars: Optional[list[PartitionGrammar]] = None, parse_filenames_as: str | None = None
+    ):
+        """Inits AutoParser.
+
+        Args:
+            partition_grammars: List of partition grammars (mostly used by `from_str` method).
+            parse_filenames_as: Name of a filename field (like a partition name) to parse, enables filename filtering.
+        """
         self.partitions = partition_grammars
+        self._parse_filenames_as = parse_filenames_as
 
     def __call__(self, dirname: str) -> tuple[str, str]:
+        if self.parses_filenames() and "=" not in dirname:
+            return self._parse_filenames_as, dirname.strip("/")  # type: ignore
         key, value = dirname.strip("/").split("=", 1)
         return key, value  # we don't return directly due to mypy not understanding split(_, 1)
 
@@ -97,43 +123,49 @@ class AutoParser(ColumnParser):
         else:
             # TODO performance issue
             # ideally, the pop call would return an existing instance, which would be pre-created...
-            return AutoParser(self.partitions[1:])
+            return AutoParser(self.partitions[1:], self._parse_filenames_as)
 
     def parses_filenames(self) -> bool:
-        return False
+        return self._parse_filenames_as is not None
 
     def is_terminal_level(self) -> bool:
         # NOTE a quirk -- if partitions not provided, we read files at every stage of crawling, and thus
         # can't guarantee all of them containing the same number of columns. Fixing that would require
-        # first iterating through all of the discovered partitions and filtering for max length only.
+        # first iterating through all the discovered partitions and filtering for max length only.
         # In the same vein, we don't guarantee even that the columns are the same for every partition.
         # For that, however, the best we could do is crash in case of inconsistency...
         if not self.partitions:
+            return True
+        # when parses_filenames is enabled
+        elif self.parses_filenames() and len(self.partitions) == 1:
             return True
         else:
             return len(self.partitions) == 0
 
     def generate(self) -> Optional[list[str]]:
         if self.partitions and self.partitions[0].values:
+            if self.is_terminal_level():
+                return [f"{value}" for value in self.partitions[0].values]
             return [f"{self.partitions[0].name}={value}" for value in self.partitions[0].values]
         else:
             return None
 
 
 class FixedColumnsParser(ColumnParser):
-    def __init__(self, partition_grammars: list[PartitionGrammar]):
+    def __init__(self, partition_grammars: list[PartitionGrammar], parse_filenames_as: str | None = None):
         self.partitions = partition_grammars
+        self._parse_filenames_as = parse_filenames_as
 
     def __call__(self, dirname: str) -> tuple[str, str]:
-        return (self.partitions[0].name, dirname.strip("/"))
+        return self.partitions[0].name, dirname.strip("/")
 
     def tail(self, partition: Partition) -> ColumnParser:
         # TODO performance issue
         # ideally, the pop call would return an existing instance, which would be pre-created...
-        return FixedColumnsParser(self.partitions[1:])
+        return FixedColumnsParser(self.partitions[1:], self._parse_filenames_as)
 
     def parses_filenames(self) -> bool:
-        return True
+        return self._parse_filenames_as is not None
 
     def is_terminal_level(self) -> bool:
         return len(self.partitions) == 1
@@ -145,6 +177,16 @@ class FixedColumnsParser(ColumnParser):
             return self.partitions[0].values
         else:
             return None
+
+    @classmethod
+    def from_str(cls, path_description: str, fname: str | None = None):
+        if fname is None:
+            logger.warning(
+                "For unambiguity, replace `FixedColumnsParser.from_str('c1/c2/fname')` "
+                "with `FixedColumnsParser.from_str('c1/c2', fname='fname')`"
+            )
+            path_description, fname = path_description.rsplit("/", 1)
+        return super().from_str(path_description, fname)
 
 
 AUTO_PARSER = AutoParser()

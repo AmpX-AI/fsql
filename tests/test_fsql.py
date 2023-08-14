@@ -124,6 +124,16 @@ def test_partition_generation(helper):
     data = read_partitioned_table(f"s3://{bucket}/table3/", Q_TRUE, parser)
     assert set(data.val.to_list()) == {1}
 
+    # future interface
+    parser = FixedColumnsParser.from_str("first_column=read_me/second_column=[yes,indeed]", fname="fname")
+    data = read_partitioned_table(f"s3://{bucket}/table3/", Q_TRUE, parser)
+    assert set(data.val.to_list()) == {1, 2}
+    assert set(data.columns) == {"first_column", "second_column", "fname", "val"}
+
+    parser = FixedColumnsParser.from_str("first_column=read_me/second_column=yes", fname="fname=i_will_be_there.json")
+    data = read_partitioned_table(f"s3://{bucket}/table3/", Q_TRUE, parser)
+    assert set(data.val.to_list()) == {1}
+
 
 def test_read_local(tmp_path):
     """Creates data in a key=val-partition format, constructs the parser to not query the fs for some; in local FS."""
@@ -166,7 +176,7 @@ def test_not_enough_partitions(tmp_path):
 
 
 def test_broken_format_autodetect(tmp_path):
-    """This test is kinda weird -- we artifically break format detection capabilities."""
+    """This test is kinda weird -- we artificially break format detection capabilities."""
     reader = PandasReader()
     reader.detect_format = lambda _: InputFormat.AUTO
     p1 = tmp_path / "c1=v1"
@@ -185,3 +195,19 @@ def test_dict_reader_nonjson(tmp_path):
     reader = EnumeratedDictReader()
     with pytest.raises(ValueError, match="EnumeratedDictReader supports only json"):
         read_partitioned_table(f"file://{tmp_path}/", Q_TRUE, data_reader=reader)
+
+
+def test_fixed_columns_parser_fname_future_warning(tmp_path):
+    p1 = tmp_path / "v1" / "v2"
+    p1.mkdir(parents=True)
+    df = pd.DataFrame({"a": [0, 1]})
+    df.to_parquet(p1 / "f1.parquet")
+    with pytest.warns(FutureWarning, match="Using `fname` directly in the path was deprecated"):
+        parser = FixedColumnsParser.from_str("c1/c2/fname")
+
+    # this should not emit any warning
+    parser = FixedColumnsParser.from_str("c1/c2", fname="fname")
+    read_partitioned_table(f"file://{tmp_path}/", Q_TRUE, parser)
+
+    parser = FixedColumnsParser.from_str("c1/c2/", fname="fname")
+    read_partitioned_table(f"file://{tmp_path}/", Q_TRUE, parser)
