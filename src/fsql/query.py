@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 # TODO
 # - query should impl some caching mechanism for partitions, to not re-eval over and over
